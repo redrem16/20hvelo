@@ -24,7 +24,7 @@ from PIL import Image, ImageDraw, ImageFont
 GEMINI_API_KEY         = os.getenv("GEMINI_API_KEY")
 INSTAGRAM_ACCESS_TOKEN = os.getenv("INSTAGRAM_ACCESS_TOKEN")
 INSTAGRAM_ACCOUNT_ID   = os.getenv("INSTAGRAM_ACCOUNT_ID")
-GITHUB_TOKEN           = os.getenv("GITHUB_TOKEN")
+GITHUB_TOKEN           = os.getenv("GH_TOKEN")
 GITHUB_USERNAME        = os.getenv("GITHUB_USERNAME")
 GITHUB_REPO            = "le20hvelo"
 GITHUB_BRANCH          = "main"
