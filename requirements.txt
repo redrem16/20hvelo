@@ -1,0 +1,16 @@
+# LE 20H VÉLO — Dépendances Python
+ 
+# Collecte des flux RSS
+feedparser==6.0.11
+ 
+# Scraping HTML (nettoyage des résumés RSS)
+beautifulsoup4==4.12.3
+ 
+# Requêtes HTTP (publication Instagram)
+requests==2.31.0
+ 
+# API Anthropic (génération des posts via Claude)
+anthropic==0.25.0
+ 
+# Génération des images carrousel
+Pillow==10.3.0
