@@ -17,7 +17,7 @@ import time
 import requests
 import feedparser
 from bs4 import BeautifulSoup
-import anthropic
+import google.generativeai as genai
 from PIL import Image, ImageDraw, ImageFont
 
 
@@ -25,7 +25,7 @@ from PIL import Image, ImageDraw, ImageFont
 # CONFIG
 # ─────────────────────────────────────────────
 
-ANTHROPIC_API_KEY      = os.environ.get("ANTHROPIC_API_KEY")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 INSTAGRAM_ACCESS_TOKEN = os.environ.get("INSTAGRAM_ACCESS_TOKEN")
 INSTAGRAM_ACCOUNT_ID   = os.environ.get("INSTAGRAM_ACCOUNT_ID")
 
@@ -226,21 +226,24 @@ def determiner_type_post():
 
 
 # ─────────────────────────────────────────────
-# 3. GÉNÉRATION DU POST VIA CLAUDE
+# 3. GÉNÉRATION DU POST VIA GEMINI
 # ─────────────────────────────────────────────
 
 def generer_post(articles, type_post):
-    """Envoie les données à Claude et récupère le post JSON."""
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    """Envoie les données à Gemini et récupère le post JSON."""
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel(
+        model_name="gemini-1.5-flash",
+        system_instruction=SYSTEM_PROMPT
+    )
 
-    # Construction du contexte
     date_str = datetime.date.today().strftime("%d/%m/%Y")
     articles_texte = "\n\n".join([
         f"[{a['source']}] {'(BELGE)' if a['est_belge'] else ''}\n"
         f"Titre : {a['titre']}\n"
         f"Résumé : {a['resume']}\n"
         f"Lien : {a['lien']}"
-        for a in articles[:15]  # max 15 articles envoyés
+        for a in articles[:15]
     ])
 
     user_message = f"""
@@ -254,16 +257,10 @@ Voici l'actu cyclisme WorldTour du jour :
 Génère le post du 20h Vélo en JSON uniquement.
 """
 
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=2000,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_message}]
-    )
+    response = model.generate_content(user_message)
+    texte = response.text.strip()
 
-    texte = response.content[0].text.strip()
-
-    # Nettoyage si Claude ajoute des backticks
+    # Nettoyage si Gemini ajoute des backticks
     if texte.startswith("```"):
         texte = texte.split("```")[1]
         if texte.startswith("json"):
