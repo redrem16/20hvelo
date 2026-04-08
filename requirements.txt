@@ -10,7 +10,7 @@ beautifulsoup4==4.12.3
 requests==2.31.0
  
 # API Anthropic (génération des posts via Claude)
-anthropic==0.25.0
+google-generativeai==0.5.4
  
 # Génération des images carrousel
 Pillow==10.3.0
