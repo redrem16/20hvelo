@@ -188,4 +188,38 @@ Genere UNIQUEMENT le JSON final.
 # 5. GENERATION DES IMAGES
 # ---------------------------------------------
 
+
 def generer_images(post):
+    os.makedirs("slides", exist_ok=True)
+    images = []
+
+    try:
+        font_titre = ImageFont.truetype("fonts/Inter-Bold.ttf", 64)
+        font_txt   = ImageFont.truetype("fonts/Inter-Regular.ttf", 40)
+        font_small = ImageFont.truetype("fonts/Inter-Regular.ttf", 28)
+    except IOError:
+        font_titre = font_txt = font_small = ImageFont.load_default()
+
+    for i, slide in enumerate(post["slides"]):
+        img = Image.new("RGB", (1080, 1080), (15, 15, 20))
+        draw = ImageDraw.Draw(img)
+
+        draw.text(
+            (40, 120),
+            slide["titre"].upper(),
+            fill=(255, 200, 0),
+            font=font_titre
+        )
+
+        y = 240
+        for ligne in slide["contenu"].split("\n"):
+            for chunk in textwrap.wrap(ligne, 40):
+                draw.text((40, y), chunk, fill=(240, 240, 240), font=font_txt)
+                y += 52
+
+        path = f"slides/slide_{i+1}.jpg"
+        img.save(path, "JPEG", quality=95)
+        images.append(path)
+
+    return images
+
