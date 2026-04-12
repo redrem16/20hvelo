@@ -185,7 +185,7 @@ def generer_post(articles, type_post):
     """Génère le contenu du post via l'API Gemini."""
     genai.configure(api_key=GEMINI_API_KEY)
     model = genai.GenerativeModel(
-        "gemini-1.5-flash",
+        "gemini-2.0-flash",
         system_instruction=SYSTEM_PROMPT,
     )
 
