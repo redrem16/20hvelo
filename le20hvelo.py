@@ -1,5 +1,5 @@
 """
-LE 20H VELO — Script principal v4.0
+LE 20H VELO — Script principal v4.1
 Collecte l'actu cyclisme WorldTour, génère un post Instagram
 via Gemini et publie automatiquement via Meta Graph API.
 """
@@ -29,13 +29,6 @@ GITHUB_TOKEN           = os.getenv("GH_TOKEN")
 # Variable GitHub native (owner/repo)
 GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY")  # ex: remyclause/le20hvelo
 GITHUB_BRANCH     = "main"
-
-SLIDES_ATTENDUS = {
-    "general":     (5, 6),
-    "focus":       (3, 4),
-    "decouverte":  (5, 5),
-    "classements": (4, 4),
-}
 
 RSS_SOURCES = [
     {"nom": "Cyclingnews",  "url": "https://www.cyclingnews.com/rss.xml"},
@@ -69,35 +62,68 @@ KEYWORDS_BELGES = [
 # ---------------------------------------------
 
 SYSTEM_PROMPT = textwrap.dedent("""\
-Tu es le rédacteur en chef de "LE 20H VELO", un compte Instagram francophone
-spécialisé dans le cyclisme WorldTour, avec un accent belge.
+Tu es le rédacteur de "LE 20H VELO", compte Instagram francophone
+de revue de presse quotidienne sur le cyclisme WorldTour.
 
-Tu reçois des articles d'actualité et tu dois produire un JSON structuré
-pour un carrousel Instagram.
+═══ RÈGLE ABSOLUE — INTERDICTION D'INVENTER ═══
+- Tu ne peux utiliser QUE les informations contenues dans les articles fournis
+- AUCUN fait, résultat, classement, citation, statistique ou temps ne peut
+  être inventé, déduit, extrapolé ou complété de mémoire
+- Si un article dit "Evenepoel a gagné", tu peux écrire qu'il a gagné.
+  Si l'article ne mentionne pas le temps, tu ne donnes PAS de temps.
+- Si une info est présentée comme rumeur dans la source, utilise
+  le conditionnel ("pourrait", "serait", "selon X")
+- Chaque fait doit être traçable à un article fourni
+- Si tu n'as pas assez d'articles, fais MOINS de slides.
+  3 slides fiables valent mieux que 6 slides avec du remplissage inventé.
+- En cas de doute sur une info : ne pas l'inclure
 
-Règles :
-- Ton dynamique, passionné, accessible
-- Priorité aux coureurs et équipes belges
-- Chaque slide = 1 info clé, texte court (max 280 caractères par slide)
-- Sources toujours citées
+QUAND CITER LA SOURCE DANS LE TEXTE :
+- Ne PAS citer la source systématiquement sur chaque slide
+- Citer la source UNIQUEMENT quand c'est journalistiquement nécessaire :
+  • Une exclu ou un scoop : "Selon la RTBF, Evenepoel pourrait…"
+  • Une rumeur ou info non confirmée : "D'après Cyclingnews, un transfert…"
+  • Des infos contradictoires : "Sporza annonce X, alors que VeloNews parle de Y"
+  • Une citation directe d'un coureur ou directeur sportif
+- Pour les résultats de course, faits établis et infos factuelles évidentes :
+  pas besoin de citer la source dans le texte
 
-Format JSON attendu :
-{
-  "type": "<general|focus|decouverte|classements>",
-  "legende": "<légende du post Instagram>",
-  "slides": [
-    {
-      "numero": 1,
-      "titre": "<titre court>",
-      "contenu": "<texte de la slide>",
-      "source": "<nom de la source>",
-      "lien": "<url de l'article>"
-    }
-  ],
-  "hashtags": ["#cycling", "#worldtour", ...]
-}
+TON ET STYLE :
+- Décontracté, naturel, entre passionnés de cyclisme
+- Jargon vélo bienvenu (peloton, baroud, bidon, musette, flamme rouge…)
+- Pas d'adresse directe au lecteur (pas de tu/vous)
+- Humour léger si ça vient naturellement, jamais forcé
+- Emojis : max 2 dans la légende, ZÉRO dans les slides
 
-Réponds UNIQUEMENT avec le JSON, sans aucun texte autour.
+STRUCTURE DU CARROUSEL :
+- Slide 1 = TOUJOURS une couverture : titre "LE 20H VELO" + date du jour
+  (contenu : une phrase d'accroche résumant l'actu du jour)
+- Slides suivantes = revue de presse, 1 slide = 1 article différent
+- Nombre total de slides (couverture incluse) : 3 minimum, 6 maximum
+- Adapter le nombre aux articles disponibles
+
+THÈMES COUVERTS (par priorité) :
+- Résultats de courses
+- Transferts et rumeurs (toujours au conditionnel si non confirmé)
+- Blessures et abandons
+- Classements UCI (uniquement si type = "classements")
+- Coulisses et insolite
+
+ANGLE BELGE :
+- Mentionner coureurs/équipes belges quand l'actu s'y prête
+- Ne pas forcer si rien de belge dans les articles du jour
+
+CONTENU PAR SLIDE :
+- Titre : max 6 mots, percutant
+- Contenu : le fait clé + pourquoi c'est important (max 250 caractères)
+
+JSON UNIQUEMENT — format strict :
+{"type":"<general|decouverte|classements>","legende":"<1-2 phrases>","slides":[{"numero":1,"titre":"<max 6 mots>","contenu":"<max 250 car>","source":"<nom>","lien":"<url>"}],"hashtags":["#tag"]}
+
+Les champs "source" et "lien" dans le JSON servent à la traçabilité interne,
+ils ne sont PAS affichés sur la slide. Seul le "contenu" apparaît visuellement.
+
+Aucun texte hors du JSON. Pas de markdown. Parsable directement.
 """)
 
 
@@ -133,7 +159,6 @@ def collecter_rss():
             for entry in feed.entries[:20]:
 
                 # Accepter les articles d'aujourd'hui ET d'hier
-                # (pour ne pas rater les articles publiés en soirée)
                 if hasattr(entry, "published_parsed") and entry.published_parsed:
                     date_article = datetime.date(*entry.published_parsed[:3])
                     if date_article < hier:
@@ -148,12 +173,12 @@ def collecter_rss():
                     "titre": entry.title,
                     "resume": BeautifulSoup(
                         entry.get("summary", ""), "html.parser"
-                    ).get_text()[:300],
+                    ).get_text()[:150],
                     "lien": entry.link,
                     "est_belge": any(k in texte for k in KEYWORDS_BELGES),
                 })
         except Exception as e:
-            print(f"⚠️ Erreur RSS pour {source['nom']}: {e}")
+            print(f"⚠️  Erreur RSS pour {source['nom']}: {e}")
 
         time.sleep(1)
 
@@ -170,8 +195,6 @@ def determiner_type_post():
     jour = datetime.date.today().weekday()
     mois = datetime.date.today().month
 
-    if jour == 2:
-        return "decouverte"
     if jour == 6 and 1 <= mois <= 10:
         return "classements"
     return "general"
@@ -182,50 +205,63 @@ def determiner_type_post():
 # ---------------------------------------------
 
 def generer_post(articles, type_post):
-    """Génère le contenu du post via l'API Gemini."""
+    """Génère le contenu du post via l'API Gemini avec retry pour le free tier."""
     genai.configure(api_key=GEMINI_API_KEY)
     model = genai.GenerativeModel(
         "gemini-2.0-flash",
         system_instruction=SYSTEM_PROMPT,
     )
 
+    # Limiter à 10 articles et résumés courts pour rester dans le free tier
     articles_txt = "\n\n".join([
-        f"[{a['source']}]{' (BELGE - PRIORITE)' if a['est_belge'] else ''}\n"
+        f"[{a['source']}]{' (BELGE)' if a['est_belge'] else ''}\n"
         f"Titre : {a['titre']}\nResume : {a['resume']}\nLien : {a['lien']}"
-        for a in articles[:15]
+        for a in articles[:10]
     ])
 
-    min_s, max_s = SLIDES_ATTENDUS[type_post]
+    prompt = (
+        f"Type: {type_post}\n"
+        f"Date: {datetime.date.today().strftime('%d %B %Y')}\n"
+        f"Slides: 3-6 selon l'actu\n\n"
+        f"Articles:\n{articles_txt}\n\n"
+        f"JSON final:"
+    )
 
-    prompt = f"""
-Type de post : {type_post}
-Nombre de slides requis : {min_s}-{max_s}
+    # Retry jusqu'à 3 fois si quota free tier dépassé
+    response = None
+    for tentative in range(3):
+        try:
+            response = model.generate_content(prompt)
+            break
+        except Exception as e:
+            if "quota" in str(e).lower() or "429" in str(e):
+                delai = 30 * (tentative + 1)
+                print(f"  ⏳ Quota Gemini atteint, attente {delai}s "
+                      f"(tentative {tentative + 1}/3)...")
+                time.sleep(delai)
+            else:
+                raise
+    else:
+        raise RuntimeError("Quota Gemini dépassé après 3 tentatives")
 
-Articles :
-{articles_txt}
-
-Genere UNIQUEMENT le JSON final.
-"""
-
-    response = model.generate_content(prompt)
     texte = response.text.strip().replace("```json", "").replace("```", "")
     post = json.loads(texte)
 
     # Validation du JSON
     required = {"type", "legende", "slides", "hashtags"}
     if not required.issubset(post):
-        raise ValueError(f"JSON incomplet — clés manquantes : {required - set(post.keys())}")
+        raise ValueError(
+            f"JSON incomplet — clés manquantes : {required - set(post.keys())}"
+        )
 
     for i, slide in enumerate(post["slides"]):
         for key in ("numero", "titre", "contenu", "source", "lien"):
             if key not in slide:
-                raise ValueError(f"Champ '{key}' manquant dans la slide {i+1}")
+                raise ValueError(f"Champ '{key}' manquant dans la slide {i + 1}")
 
-    if not (min_s <= len(post["slides"]) <= max_s):
-        raise ValueError(
-            f"Nombre de slides invalide : {len(post['slides'])} "
-            f"(attendu {min_s}-{max_s})"
-        )
+    nb = len(post["slides"])
+    if not (3 <= nb <= 6):
+        raise ValueError(f"Nombre de slides invalide : {nb} (attendu 3-6)")
 
     return post
 
@@ -244,7 +280,7 @@ def generer_images(post):
         font_txt   = ImageFont.truetype("fonts/Inter-Regular.ttf", 40)
         font_small = ImageFont.truetype("fonts/Inter-Regular.ttf", 28)
     except IOError:
-        print("⚠️ Polices Inter non trouvées, utilisation de la police par défaut")
+        print("⚠️  Polices Inter non trouvées, utilisation de la police par défaut")
         font_titre = font_txt = font_small = ImageFont.load_default()
 
     for i, slide in enumerate(post["slides"]):
@@ -266,15 +302,7 @@ def generer_images(post):
                 draw.text((40, y), chunk, fill=(240, 240, 240), font=font_txt)
                 y += 52
 
-        # Source en bas
-        draw.text(
-            (40, 1000),
-            f"📰 {slide['source']}",
-            fill=(150, 150, 150),
-            font=font_small,
-        )
-
-        path = f"slides/slide_{i+1}.jpg"
+        path = f"slides/slide_{i + 1}.jpg"
         img.save(path, "JPEG", quality=95)
         images.append(path)
 
@@ -316,14 +344,14 @@ def upload_image_github(image_path):
         "X-GitHub-Api-Version": "2022-11-28",
     }
 
-    # Vérifier si le fichier existe déjà (pour le SHA nécessaire à un update)
+    # Vérifier si le fichier existe déjà (SHA nécessaire pour un update)
     sha = None
     resp_check = requests.get(url, headers=headers)
     if resp_check.status_code == 200:
         sha = resp_check.json().get("sha")
 
     payload = {
-        "message": f"📸 Slide {filename} — {date_str}",
+        "message": f"slide {filename} — {date_str}",
         "content": contenu_b64,
         "branch": GITHUB_BRANCH,
     }
@@ -350,12 +378,11 @@ def upload_image_github(image_path):
 def publier_instagram(post, images):
     """
     Publie un carrousel Instagram via la Meta Graph API.
-    Etapes : upload des images → création des containers →
-    création du carrousel → publication.
+    Étapes : upload images → containers → carrousel → publication.
     """
     base_url = "https://graph.facebook.com/v19.0"
 
-    # --- Etape 1 : Upload des images sur GitHub + création des containers ---
+    # --- Étape 1 : Upload images sur GitHub + création des containers ---
     print("  📤 Upload des images et création des containers...")
     container_ids = []
 
@@ -377,7 +404,7 @@ def publier_instagram(post, images):
         container_ids.append(container_id)
         print(f"  📦 Container créé : {container_id}")
 
-    # --- Etape 2 : Créer le carrousel ---
+    # --- Étape 2 : Créer le carrousel ---
     print("  🎠 Création du carrousel...")
     legende = post["legende"] + "\n\n" + " ".join(post["hashtags"])
 
@@ -394,8 +421,7 @@ def publier_instagram(post, images):
     carousel_id = resp.json()["id"]
     print(f"  🎠 Carrousel créé : {carousel_id}")
 
-    # --- Etape 3 : Attente + Publication ---
-    # L'API Meta peut avoir besoin de quelques secondes pour traiter
+    # --- Étape 3 : Attente + Publication ---
     print("  ⏳ Attente du traitement Meta (30s)...")
     time.sleep(30)
 
@@ -419,7 +445,7 @@ def publier_instagram(post, images):
 
 def main():
     print("=" * 50)
-    print("🚴 LE 20H VELO — Publication automatique")
+    print("LE 20H VELO — Publication automatique")
     print("=" * 50)
 
     date_str = datetime.date.today().isoformat()
@@ -440,7 +466,7 @@ def main():
     print(f"📰 {len(articles)} articles trouvés")
     belges = sum(1 for a in articles if a["est_belge"])
     if belges:
-        print(f"   dont {belges} article(s) belge(s) 🇧🇪")
+        print(f"   dont {belges} article(s) belge(s)")
 
     # Type de post
     type_post = determiner_type_post()
