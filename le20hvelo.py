@@ -1,5 +1,5 @@
 """
-LE 20H VELO — Script principal v4.1
+LE 20H VELO — Script principal v4.2
 Collecte l'actu cyclisme WorldTour, génère un post Instagram
 via Gemini et publie automatiquement via Meta Graph API.
 """
@@ -26,8 +26,7 @@ INSTAGRAM_ACCESS_TOKEN = os.getenv("INSTAGRAM_ACCESS_TOKEN")
 INSTAGRAM_ACCOUNT_ID   = os.getenv("INSTAGRAM_ACCOUNT_ID")
 GITHUB_TOKEN           = os.getenv("GH_TOKEN")
 
-# Variable GitHub native (owner/repo)
-GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY")  # ex: remyclause/le20hvelo
+GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY")  # redrem16/20hvelo
 GITHUB_BRANCH     = "main"
 
 RSS_SOURCES = [
@@ -132,12 +131,10 @@ Aucun texte hors du JSON. Pas de markdown. Parsable directement.
 # ---------------------------------------------
 
 def verifier_cache(date_str):
-    """Vérifie si un post a déjà été généré aujourd'hui."""
     return os.path.exists(f"cache/{date_str}.json")
 
 
 def sauvegarder_cache(date_str, post_json):
-    """Sauvegarde le post du jour dans le cache."""
     os.makedirs("cache", exist_ok=True)
     with open(f"cache/{date_str}.json", "w", encoding="utf-8") as f:
         json.dump(post_json, f, ensure_ascii=False, indent=2)
@@ -148,7 +145,6 @@ def sauvegarder_cache(date_str, post_json):
 # ---------------------------------------------
 
 def collecter_rss():
-    """Collecte les articles RSS du jour liés au WorldTour."""
     aujourd_hui = datetime.date.today()
     hier = aujourd_hui - datetime.timedelta(days=1)
     articles = []
@@ -157,8 +153,6 @@ def collecter_rss():
         try:
             feed = feedparser.parse(source["url"])
             for entry in feed.entries[:20]:
-
-                # Accepter les articles d'aujourd'hui ET d'hier
                 if hasattr(entry, "published_parsed") and entry.published_parsed:
                     date_article = datetime.date(*entry.published_parsed[:3])
                     if date_article < hier:
@@ -179,7 +173,6 @@ def collecter_rss():
                 })
         except Exception as e:
             print(f"⚠️  Erreur RSS pour {source['nom']}: {e}")
-
         time.sleep(1)
 
     articles.sort(key=lambda x: x["est_belge"], reverse=True)
@@ -191,10 +184,8 @@ def collecter_rss():
 # ---------------------------------------------
 
 def determiner_type_post():
-    """Détermine le type de post en fonction du jour."""
     jour = datetime.date.today().weekday()
     mois = datetime.date.today().month
-
     if jour == 6 and 1 <= mois <= 10:
         return "classements"
     return "general"
@@ -205,39 +196,33 @@ def determiner_type_post():
 # ---------------------------------------------
 
 def generer_post(articles, type_post):
-    """Génère le contenu du post via l'API Gemini avec retry pour le free tier."""
     genai.configure(api_key=GEMINI_API_KEY)
     model = genai.GenerativeModel(
-    "gemini-3-flash-preview",
-    system_instruction=SYSTEM_PROMPT,
+        "gemini-3-flash-preview",
+        system_instruction=SYSTEM_PROMPT,
     )
 
-    # Limiter à 10 articles et résumés courts pour rester dans le free tier
-    articles_txt = "\n\n".join([
-        f"[{a['source']}]{' (BELGE)' if a['est_belge'] else ''}\n"
-        f"Titre : {a['titre']}\nResume : {a['resume']}\nLien : {a['lien']}"
-        for a in articles[:10]
+    articles_txt = "\n".join([
+        f"- [{a['source']}] {a['titre']} | {a['lien']}"
+        f"{' (BELGE)' if a['est_belge'] else ''}"
+        for a in articles[:8]
     ])
 
     prompt = (
-        f"Type: {type_post}\n"
-        f"Date: {datetime.date.today().strftime('%d %B %Y')}\n"
-        f"Slides: 3-6 selon l'actu\n\n"
-        f"Articles:\n{articles_txt}\n\n"
-        f"JSON final:"
+        f"Type: {type_post} | Date: {datetime.date.today().strftime('%d %B %Y')}\n"
+        f"Slides: 3-6\n\n{articles_txt}\n\nJSON:"
     )
 
-    # Retry jusqu'à 3 fois si quota free tier dépassé
     response = None
     for tentative in range(3):
         try:
             response = model.generate_content(prompt)
             break
         except Exception as e:
+            print(f"  ❌ Erreur Gemini : {type(e).__name__}: {e}")
             if "quota" in str(e).lower() or "429" in str(e):
-                delai = 30 * (tentative + 1)
-                print(f"  ⏳ Quota Gemini atteint, attente {delai}s "
-                      f"(tentative {tentative + 1}/3)...")
+                delai = 60 * (tentative + 1)
+                print(f"  ⏳ Quota Gemini, attente {delai}s ({tentative + 1}/3)...")
                 time.sleep(delai)
             else:
                 raise
@@ -247,12 +232,9 @@ def generer_post(articles, type_post):
     texte = response.text.strip().replace("```json", "").replace("```", "")
     post = json.loads(texte)
 
-    # Validation du JSON
     required = {"type", "legende", "slides", "hashtags"}
     if not required.issubset(post):
-        raise ValueError(
-            f"JSON incomplet — clés manquantes : {required - set(post.keys())}"
-        )
+        raise ValueError(f"JSON incomplet — clés manquantes : {required - set(post.keys())}")
 
     for i, slide in enumerate(post["slides"]):
         for key in ("numero", "titre", "contenu", "source", "lien"):
@@ -271,23 +253,20 @@ def generer_post(articles, type_post):
 # ---------------------------------------------
 
 def generer_images(post):
-    """Génère les images JPEG pour chaque slide du carrousel."""
     os.makedirs("slides", exist_ok=True)
     images = []
 
     try:
         font_titre = ImageFont.truetype("fonts/Inter-Bold.ttf", 64)
         font_txt   = ImageFont.truetype("fonts/Inter-Regular.ttf", 40)
-        font_small = ImageFont.truetype("fonts/Inter-Regular.ttf", 28)
     except IOError:
         print("⚠️  Polices Inter non trouvées, utilisation de la police par défaut")
-        font_titre = font_txt = font_small = ImageFont.load_default()
+        font_titre = font_txt = ImageFont.load_default()
 
     for i, slide in enumerate(post["slides"]):
         img = Image.new("RGB", (1080, 1080), (15, 15, 20))
         draw = ImageDraw.Draw(img)
 
-        # Titre en jaune
         draw.text(
             (40, 120),
             slide["titre"].upper(),
@@ -295,7 +274,6 @@ def generer_images(post):
             font=font_titre,
         )
 
-        # Contenu en blanc
         y = 240
         for ligne in slide["contenu"].split("\n"):
             for chunk in textwrap.wrap(ligne, 40):
@@ -310,65 +288,97 @@ def generer_images(post):
 
 
 # ---------------------------------------------
-# 6. UPLOAD DES IMAGES SUR GITHUB (URLs publiques)
+# 6. UPLOAD DES IMAGES SUR GITHUB (un seul commit)
 # ---------------------------------------------
 
-def upload_image_github(image_path):
-    """
-    Upload une image dans le dépôt GitHub (branche main)
-    et retourne l'URL raw publique utilisable par l'API Instagram.
-    """
+def upload_images_github(image_paths):
     if not GITHUB_REPOSITORY or not GITHUB_TOKEN:
-        raise ValueError(
-            "GITHUB_REPOSITORY ou GH_TOKEN non défini. "
-            "Vérifiez vos secrets GitHub Actions."
-        )
+        raise ValueError("GITHUB_REPOSITORY ou GH_TOKEN non défini.")
 
-    # Lire l'image et l'encoder en base64
-    with open(image_path, "rb") as f:
-        contenu_b64 = base64.b64encode(f.read()).decode("utf-8")
-
-    # Chemin dans le dépôt : images/2026-04-12/slide_1.jpg
-    date_str = datetime.date.today().isoformat()
-    filename = os.path.basename(image_path)
-    repo_path = f"images/{date_str}/{filename}"
-
-    url = (
-        f"https://api.github.com/repos/{GITHUB_REPOSITORY}"
-        f"/contents/{repo_path}"
-    )
-
+    token = os.getenv("GH_TOKEN")
     headers = {
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     }
+    api = f"https://api.github.com/repos/{GITHUB_REPOSITORY}"
+    date_str = datetime.date.today().isoformat()
 
-    # Vérifier si le fichier existe déjà (SHA nécessaire pour un update)
-    sha = None
-    resp_check = requests.get(url, headers=headers)
-    if resp_check.status_code == 200:
-        sha = resp_check.json().get("sha")
-
-    payload = {
-        "message": f"slide {filename} — {date_str}",
-        "content": contenu_b64,
-        "branch": GITHUB_BRANCH,
-    }
-    if sha:
-        payload["sha"] = sha
-
-    resp = requests.put(url, headers=headers, json=payload)
+    # 1. SHA du dernier commit
+    resp = requests.get(f"{api}/git/ref/heads/{GITHUB_BRANCH}", headers=headers)
     resp.raise_for_status()
+    last_commit_sha = resp.json()["object"]["sha"]
 
-    # URL raw publique
-    raw_url = (
-        f"https://raw.githubusercontent.com/{GITHUB_REPOSITORY}"
-        f"/{GITHUB_BRANCH}/{repo_path}"
+    # 2. Tree du dernier commit
+    resp = requests.get(f"{api}/git/commits/{last_commit_sha}", headers=headers)
+    resp.raise_for_status()
+    base_tree_sha = resp.json()["tree"]["sha"]
+
+    # 3. Créer un blob par image
+    tree_items = []
+    for img_path in image_paths:
+        with open(img_path, "rb") as f:
+            contenu_b64 = base64.b64encode(f.read()).decode("utf-8")
+
+        resp = requests.post(
+            f"{api}/git/blobs",
+            headers=headers,
+            json={"content": contenu_b64, "encoding": "base64"},
+        )
+        resp.raise_for_status()
+        blob_sha = resp.json()["sha"]
+
+        filename = os.path.basename(img_path)
+        tree_items.append({
+            "path": f"images/{date_str}/{filename}",
+            "mode": "100644",
+            "type": "blob",
+            "sha": blob_sha,
+        })
+        print(f"  📦 Blob créé : {filename}")
+
+    # 4. Nouveau tree
+    resp = requests.post(
+        f"{api}/git/trees",
+        headers=headers,
+        json={"base_tree": base_tree_sha, "tree": tree_items},
     )
+    resp.raise_for_status()
+    new_tree_sha = resp.json()["sha"]
 
-    print(f"  ✅ {filename} → {raw_url}")
-    return raw_url
+    # 5. Commit
+    resp = requests.post(
+        f"{api}/git/commits",
+        headers=headers,
+        json={
+            "message": f"slides {date_str}",
+            "tree": new_tree_sha,
+            "parents": [last_commit_sha],
+        },
+    )
+    resp.raise_for_status()
+    new_commit_sha = resp.json()["sha"]
+
+    # 6. Mettre à jour main
+    resp = requests.patch(
+        f"{api}/git/refs/heads/{GITHUB_BRANCH}",
+        headers=headers,
+        json={"sha": new_commit_sha},
+    )
+    resp.raise_for_status()
+    print(f"  ✅ Commit créé avec {len(image_paths)} images")
+
+    # 7. URLs raw
+    urls = []
+    for img_path in image_paths:
+        filename = os.path.basename(img_path)
+        raw_url = (
+            f"https://raw.githubusercontent.com/{GITHUB_REPOSITORY}"
+            f"/{GITHUB_BRANCH}/images/{date_str}/{filename}"
+        )
+        urls.append(raw_url)
+
+    return urls
 
 
 # ---------------------------------------------
@@ -376,22 +386,22 @@ def upload_image_github(image_path):
 # ---------------------------------------------
 
 def publier_instagram(post, images):
-    """
-    Publie un carrousel Instagram via la Meta Graph API.
-    Étapes : upload images → containers → carrousel → publication.
-    """
     base_url = "https://graph.facebook.com/v19.0"
 
-    # --- Étape 1 : Upload images sur GitHub + création des containers ---
-    print("  📤 Upload des images et création des containers...")
+    # Upload toutes les images en un seul commit
+    print("  📤 Upload des images sur GitHub...")
+    image_urls = upload_images_github(images)
+
+    # Attendre que GitHub serve les fichiers
+    print("  ⏳ Attente propagation GitHub (15s)...")
+    time.sleep(15)
+
+    # Créer les containers Instagram
+    print("  📦 Création des containers Instagram...")
     container_ids = []
 
-    for img_path in images:
-        # Obtenir une URL publique via GitHub
-        image_url = upload_image_github(img_path)
-
-        # Créer un container pour cette image
-    resp = requests.post(
+    for image_url in image_urls:
+        resp = requests.post(
             f"{base_url}/{INSTAGRAM_ACCOUNT_ID}/media",
             data={
                 "image_url": image_url,
@@ -399,15 +409,12 @@ def publier_instagram(post, images):
                 "access_token": INSTAGRAM_ACCESS_TOKEN,
             },
         )
-        print(f"  🔍 Réponse Meta : {resp.status_code} — {resp.text}")
+        print(f"  🔍 Meta container : {resp.status_code} — {resp.text}")
         resp.raise_for_status()
-        )
-        resp.raise_for_status()
-        container_id = resp.json()["id"]
-        container_ids.append(container_id)
-        print(f"  📦 Container créé : {container_id}")
+        container_ids.append(resp.json()["id"])
+        print(f"  📦 Container : {resp.json()['id']}")
 
-    # --- Étape 2 : Créer le carrousel ---
+    # Créer le carrousel
     print("  🎠 Création du carrousel...")
     legende = post["legende"] + "\n\n" + " ".join(post["hashtags"])
 
@@ -420,12 +427,12 @@ def publier_instagram(post, images):
             "access_token": INSTAGRAM_ACCESS_TOKEN,
         },
     )
+    print(f"  🔍 Meta carrousel : {resp.status_code} — {resp.text}")
     resp.raise_for_status()
     carousel_id = resp.json()["id"]
-    print(f"  🎠 Carrousel créé : {carousel_id}")
 
-    # --- Étape 3 : Attente + Publication ---
-    print("  ⏳ Attente du traitement Meta (30s)...")
+    # Publier
+    print("  ⏳ Attente traitement Meta (30s)...")
     time.sleep(30)
 
     resp = requests.post(
@@ -435,6 +442,7 @@ def publier_instagram(post, images):
             "access_token": INSTAGRAM_ACCESS_TOKEN,
         },
     )
+    print(f"  🔍 Meta publish : {resp.status_code} — {resp.text}")
     resp.raise_for_status()
     post_id = resp.json()["id"]
     print(f"  ✅ Publié sur Instagram ! Post ID : {post_id}")
@@ -443,7 +451,7 @@ def publier_instagram(post, images):
 
 
 # ---------------------------------------------
-# 8. MAIN — Point d'entrée
+# 8. MAIN
 # ---------------------------------------------
 
 def main():
@@ -453,12 +461,10 @@ def main():
 
     date_str = datetime.date.today().isoformat()
 
-    # Vérifier si déjà publié aujourd'hui
     if verifier_cache(date_str):
         print(f"⏭️  Post déjà généré pour {date_str}, on skip.")
         return
 
-    # Collecte RSS
     print("\n📡 Collecte des articles RSS...")
     articles = collecter_rss()
 
@@ -471,25 +477,20 @@ def main():
     if belges:
         print(f"   dont {belges} article(s) belge(s)")
 
-    # Type de post
     type_post = determiner_type_post()
     print(f"\n📝 Type de post du jour : {type_post}")
 
-    # Génération du contenu via Gemini
     print("\n🤖 Génération du contenu via Gemini...")
     post = generer_post(articles, type_post)
     print(f"   {len(post['slides'])} slides générées")
 
-    # Génération des images
     print("\n🎨 Génération des images...")
     images = generer_images(post)
     print(f"   {len(images)} images créées")
 
-    # Publication Instagram
     print("\n📤 Publication sur Instagram...")
     publier_instagram(post, images)
 
-    # Sauvegarder le cache
     sauvegarder_cache(date_str, post)
 
     print("\n" + "=" * 50)
