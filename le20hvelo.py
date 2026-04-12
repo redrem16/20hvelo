@@ -208,8 +208,8 @@ def generer_post(articles, type_post):
     """Génère le contenu du post via l'API Gemini avec retry pour le free tier."""
     genai.configure(api_key=GEMINI_API_KEY)
     model = genai.GenerativeModel(
-        "gemini-2.5-flash",
-        system_instruction=SYSTEM_PROMPT,
+    "gemini-3-flash-preview",
+    system_instruction=SYSTEM_PROMPT,
     )
 
     # Limiter à 10 articles et résumés courts pour rester dans le free tier
