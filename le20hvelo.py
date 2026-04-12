@@ -391,13 +391,16 @@ def publier_instagram(post, images):
         image_url = upload_image_github(img_path)
 
         # Créer un container pour cette image
-        resp = requests.post(
+    resp = requests.post(
             f"{base_url}/{INSTAGRAM_ACCOUNT_ID}/media",
             data={
                 "image_url": image_url,
                 "is_carousel_item": "true",
                 "access_token": INSTAGRAM_ACCESS_TOKEN,
             },
+        )
+        print(f"  🔍 Réponse Meta : {resp.status_code} — {resp.text}")
+        resp.raise_for_status()
         )
         resp.raise_for_status()
         container_id = resp.json()["id"]
