@@ -1,5 +1,5 @@
 """
-LE 20H VELO — Script principal v4.3
+LE 20H VELO — Script principal v5.0
 Collecte l'actu cyclisme WorldTour, génère un post Instagram
 via Gemini et publie automatiquement via Meta Graph API.
 """
@@ -29,7 +29,19 @@ GITHUB_TOKEN           = os.getenv("GH_TOKEN")
 GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY")
 GITHUB_BRANCH     = "main"
 
+# Couleurs du design
+NOIR_FOND    = (15, 15, 20)
+JAUNE_ACCENT = (232, 177, 0)
+BLEU_ACCENT  = (58, 107, 159)
+BLANC_TEXTE  = (240, 240, 240)
+GRIS_SUBTLE  = (138, 138, 149)
+
+# ---------------------------------------------
+# SOURCES RSS
+# ---------------------------------------------
+
 RSS_SOURCES = [
+    # --- Médias cyclisme ---
     {"nom": "Cyclingnews",  "url": "https://www.cyclingnews.com/rss.xml"},
     {"nom": "Cyclism'Actu", "url": "https://www.cyclismactu.net/feed"},
     {"nom": "VeloNews",     "url": "https://www.velonews.com/feed"},
@@ -38,6 +50,24 @@ RSS_SOURCES = [
         "nom": "RTBF Sport",
         "url": "https://www.rtbf.be/api/dyn?action=get_article_list&cat=sp_cyclisme&output=rss",
     },
+    {"nom": "DirectVelo",   "url": "https://www.directvelo.com/rss"},
+    {"nom": "Wielerflits",  "url": "https://www.wielerflits.nl/feed/"},
+    {"nom": "ProCyclingStats", "url": "https://www.procyclingstats.com/rss.php"},
+    {"nom": "FirstCycling",  "url": "https://firstcycling.com/rss.php"},
+    # --- Equipes WorldTour ---
+    {"nom": "Visma-LAB",      "url": "https://www.teamvisma-leaseabike.com/feed"},
+    {"nom": "UAE Team Emirates", "url": "https://www.uaeteamemirates.com/feed/"},
+    {"nom": "Soudal Quick-Step", "url": "https://www.soudal-quickstepteam.com/feed"},
+    {"nom": "INEOS Grenadiers",  "url": "https://www.ineosgrenadiers.com/feed"},
+    {"nom": "Lidl-Trek",        "url": "https://www.lidl-trek.com/feed"},
+    {"nom": "Alpecin-Deceuninck", "url": "https://www.alpecin-deceuninck.com/en/feed"},
+    {"nom": "Intermarché-Wanty", "url": "https://www.intermarche-wanty.com/feed"},
+    {"nom": "Lotto-Dstny",      "url": "https://www.lfrvcycling.com/feed"},
+    {"nom": "Bahrain Victorious", "url": "https://www.teambahrainvictorious.com/feed"},
+    {"nom": "Movistar Team",    "url": "https://www.movistarteam.com/feed"},
+    {"nom": "EF Education",     "url": "https://www.efprocycling.com/feed"},
+    {"nom": "Jayco-AlUla",      "url": "https://www.greenedge.bike/feed"},
+    {"nom": "Bora-Hansgrohe",   "url": "https://www.bfrvcycling.com/feed"},
 ]
 
 KEYWORDS_WORLDTOUR = [
@@ -45,7 +75,12 @@ KEYWORDS_WORLDTOUR = [
     "paris-roubaix", "flandres", "liege", "sanremo",
     "lombardie", "amstel", "strade", "tirreno",
     "paris-nice", "criterium", "uci", "peloton",
-    "pro cycling",
+    "pro cycling", "stage", "etape", "classement",
+    "victoire", "winner", "sprint", "breakaway",
+    "gc", "general classification", "maillot jaune",
+    "maillot rose", "maglia rosa", "leader",
+    "transfer", "transfert", "signe", "contract",
+    "injured", "bless", "abandon", "chute", "crash",
 ]
 
 KEYWORDS_BELGES = [
@@ -152,7 +187,7 @@ def collecter_rss():
     for source in RSS_SOURCES:
         try:
             feed = feedparser.parse(source["url"])
-            for entry in feed.entries[:20]:
+            for entry in feed.entries[:15]:
                 if hasattr(entry, "published_parsed") and entry.published_parsed:
                     date_article = datetime.date(*entry.published_parsed[:3])
                     if date_article < hier:
@@ -173,10 +208,19 @@ def collecter_rss():
                 })
         except Exception as e:
             print(f"⚠️  Erreur RSS pour {source['nom']}: {e}")
-        time.sleep(1)
+        time.sleep(0.5)
 
-    articles.sort(key=lambda x: x["est_belge"], reverse=True)
-    return articles
+    # Dédupliquer par titre similaire
+    seen_titles = set()
+    unique_articles = []
+    for a in articles:
+        title_key = a["titre"].lower()[:50]
+        if title_key not in seen_titles:
+            seen_titles.add(title_key)
+            unique_articles.append(a)
+
+    unique_articles.sort(key=lambda x: x["est_belge"], reverse=True)
+    return unique_articles
 
 
 # ---------------------------------------------
@@ -252,36 +296,138 @@ def generer_post(articles, type_post):
 # 5. GENERATION DES IMAGES
 # ---------------------------------------------
 
+def charger_logo():
+    """Charge le logo depuis assets/logo.png, redimensionné."""
+    try:
+        logo = Image.open("assets/logo.png").convert("RGBA")
+        logo = logo.resize((120, 120), Image.LANCZOS)
+        return logo
+    except FileNotFoundError:
+        print("⚠️  Logo non trouvé dans assets/logo.png")
+        return None
+
+
+def dessiner_barre_haut(draw):
+    """Barre jaune en haut de chaque slide."""
+    draw.rectangle([(0, 0), (1080, 6)], fill=JAUNE_ACCENT)
+
+
+def dessiner_barre_bas(draw):
+    """Barre bleue en bas de chaque slide."""
+    draw.rectangle([(0, 1074), (1080, 1080)], fill=BLEU_ACCENT)
+
+
+def generer_slide_couverture(post, logo, font_titre, font_txt, font_small):
+    """Génère la slide de couverture."""
+    img = Image.new("RGB", (1080, 1080), NOIR_FOND)
+    draw = ImageDraw.Draw(img)
+
+    dessiner_barre_haut(draw)
+    dessiner_barre_bas(draw)
+
+    # Logo centré
+    if logo:
+        x_logo = (1080 - logo.width) // 2
+        img.paste(logo, (x_logo, 80), logo)
+        y_start = 220
+    else:
+        # Texte stylisé si pas de logo
+        draw.text((390, 80), "LE", fill=JAUNE_ACCENT, font=font_small)
+        draw.text((370, 110), "20H", fill=BLANC_TEXTE, font=font_titre)
+        draw.text((340, 190), "VÉLO", fill=JAUNE_ACCENT, font=font_titre)
+        y_start = 300
+
+    # Ligne séparation
+    draw.line([(340, y_start), (740, y_start)], fill=JAUNE_ACCENT, width=2)
+
+    # Date
+    date_txt = datetime.date.today().strftime("%d %B %Y").upper()
+    bbox = draw.textbbox((0, 0), date_txt, font=font_small)
+    date_w = bbox[2] - bbox[0]
+    draw.text(((1080 - date_w) // 2, y_start + 20), date_txt,
+              fill=GRIS_SUBTLE, font=font_small)
+
+    # Accroche
+    slide_couverture = post["slides"][0]
+    y = y_start + 80
+    for chunk in textwrap.wrap(slide_couverture["contenu"], 35):
+        bbox = draw.textbbox((0, 0), chunk, font=font_txt)
+        chunk_w = bbox[2] - bbox[0]
+        draw.text(((1080 - chunk_w) // 2, y), chunk,
+                  fill=BLANC_TEXTE, font=font_txt)
+        y += 48
+
+    return img
+
+
+def generer_slide_contenu(slide, num, total, logo, font_titre, font_txt, font_small):
+    """Génère une slide de contenu."""
+    img = Image.new("RGB", (1080, 1080), NOIR_FOND)
+    draw = ImageDraw.Draw(img)
+
+    dessiner_barre_haut(draw)
+    dessiner_barre_bas(draw)
+
+    # Header : logo petit à gauche + numéro à droite
+    if logo:
+        petit_logo = logo.resize((50, 50), Image.LANCZOS)
+        img.paste(petit_logo, (40, 30), petit_logo)
+    else:
+        draw.text((40, 35), "20H VÉLO", fill=JAUNE_ACCENT, font=font_small)
+
+    num_txt = f"{num} / {total}"
+    bbox = draw.textbbox((0, 0), num_txt, font=font_small)
+    num_w = bbox[2] - bbox[0]
+    draw.text((1080 - 40 - num_w, 42), num_txt, fill=GRIS_SUBTLE, font=font_small)
+
+    # Titre en jaune
+    y = 110
+    titre_lines = textwrap.wrap(slide["titre"].upper(), 26)
+    for line in titre_lines:
+        draw.text((60, y), line, fill=JAUNE_ACCENT, font=font_titre)
+        y += 58
+
+    # Trait bleu de séparation
+    y += 15
+    draw.line([(60, y), (160, y)], fill=BLEU_ACCENT, width=3)
+    y += 30
+
+    # Contenu en blanc
+    for ligne in slide["contenu"].split("\n"):
+        for chunk in textwrap.wrap(ligne, 36):
+            draw.text((60, y), chunk, fill=BLANC_TEXTE, font=font_txt)
+            y += 46
+
+    return img
+
+
 def generer_images(post):
+    """Génère toutes les images du carrousel."""
     os.makedirs("slides", exist_ok=True)
     images = []
 
     try:
         font_titre = ImageFont.truetype("fonts/Inter-Bold.ttf", 48)
-        font_txt   = ImageFont.truetype("fonts/Inter-Regular.ttf", 36)
+        font_txt   = ImageFont.truetype("fonts/Inter-Regular.ttf", 34)
+        font_small = ImageFont.truetype("fonts/Inter-Regular.ttf", 24)
     except IOError:
         print("⚠️  Polices Inter non trouvées, utilisation de la police par défaut")
-        font_titre = font_txt = ImageFont.load_default()
+        font_titre = font_txt = font_small = ImageFont.load_default()
+
+    logo = charger_logo()
+    total = len(post["slides"])
 
     for i, slide in enumerate(post["slides"]):
-        img = Image.new("RGB", (1080, 1080), (15, 15, 20))
-        draw = ImageDraw.Draw(img)
-
-        # Titre en jaune — avec retour à la ligne
-        y = 100
-        titre_lines = textwrap.wrap(slide["titre"].upper(), 28)
-        for line in titre_lines:
-            draw.text((60, y), line, fill=(255, 200, 0), font=font_titre)
-            y += 60
-
-        # Espacement entre titre et contenu
-        y += 40
-
-        # Contenu en blanc
-        for ligne in slide["contenu"].split("\n"):
-            for chunk in textwrap.wrap(ligne, 38):
-                draw.text((60, y), chunk, fill=(240, 240, 240), font=font_txt)
-                y += 48
+        if i == 0:
+            # Slide de couverture
+            img = generer_slide_couverture(
+                post, logo, font_titre, font_txt, font_small
+            )
+        else:
+            # Slides de contenu
+            img = generer_slide_contenu(
+                slide, i + 1, total, logo, font_titre, font_txt, font_small
+            )
 
         path = f"slides/slide_{i + 1}.jpg"
         img.save(path, "JPEG", quality=95)
@@ -384,10 +530,6 @@ def upload_images_github(image_paths):
 def publier_instagram(post, images):
     base_url = "https://graph.facebook.com/v25.0"
 
-    # Debug : vérifier les variables
-    print(f"  🔍 DEBUG INSTAGRAM_ACCOUNT_ID = [{INSTAGRAM_ACCOUNT_ID}]")
-    print(f"  🔍 DEBUG TOKEN length = {len(INSTAGRAM_ACCESS_TOKEN) if INSTAGRAM_ACCESS_TOKEN else 0}")
-
     # Upload toutes les images en un seul commit
     print("  📤 Upload des images sur GitHub...")
     image_urls = upload_images_github(images)
@@ -400,12 +542,8 @@ def publier_instagram(post, images):
     container_ids = []
 
     for image_url in image_urls:
-        url = f"{base_url}/{INSTAGRAM_ACCOUNT_ID}/media"
-        print(f"  🔍 POST → {url}")
-        print(f"  🔍 image_url → {image_url}")
-
         resp = requests.post(
-            url,
+            f"{base_url}/{INSTAGRAM_ACCOUNT_ID}/media",
             data={
                 "image_url": image_url,
                 "is_carousel_item": "true",
@@ -417,10 +555,16 @@ def publier_instagram(post, images):
         container_ids.append(resp.json()["id"])
         print(f"  📦 Container : {resp.json()['id']}")
 
+    # Construire la légende avec les liens
+    legende = post["legende"] + "\n\n"
+    legende += "📰 Sources :\n"
+    for slide in post["slides"]:
+        if slide.get("lien") and slide["numero"] > 1:
+            legende += f"➤ {slide['titre']} : {slide['lien']}\n"
+    legende += "\n" + " ".join(post["hashtags"])
+
     # Créer le carrousel
     print("  🎠 Création du carrousel...")
-    legende = post["legende"] + "\n\n" + " ".join(post["hashtags"])
-
     resp = requests.post(
         f"{base_url}/{INSTAGRAM_ACCOUNT_ID}/media",
         data={
@@ -459,7 +603,7 @@ def publier_instagram(post, images):
 
 def main():
     print("=" * 50)
-    print("LE 20H VELO — Publication automatique")
+    print("LE 20H VELO — Publication automatique v5.0")
     print("=" * 50)
 
     date_str = datetime.date.today().isoformat()
