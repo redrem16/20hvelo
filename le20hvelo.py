@@ -1,5 +1,5 @@
 """
-LE 20H VELO — Script principal v4.2
+LE 20H VELO — Script principal v4.3
 Collecte l'actu cyclisme WorldTour, génère un post Instagram
 via Gemini et publie automatiquement via Meta Graph API.
 """
@@ -26,7 +26,7 @@ INSTAGRAM_ACCESS_TOKEN = os.getenv("INSTAGRAM_ACCESS_TOKEN")
 INSTAGRAM_ACCOUNT_ID   = os.getenv("INSTAGRAM_ACCOUNT_ID")
 GITHUB_TOKEN           = os.getenv("GH_TOKEN")
 
-GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY")  # redrem16/20hvelo
+GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY")
 GITHUB_BRANCH     = "main"
 
 RSS_SOURCES = [
@@ -304,17 +304,14 @@ def upload_images_github(image_paths):
     api = f"https://api.github.com/repos/{GITHUB_REPOSITORY}"
     date_str = datetime.date.today().isoformat()
 
-    # 1. SHA du dernier commit
     resp = requests.get(f"{api}/git/ref/heads/{GITHUB_BRANCH}", headers=headers)
     resp.raise_for_status()
     last_commit_sha = resp.json()["object"]["sha"]
 
-    # 2. Tree du dernier commit
     resp = requests.get(f"{api}/git/commits/{last_commit_sha}", headers=headers)
     resp.raise_for_status()
     base_tree_sha = resp.json()["tree"]["sha"]
 
-    # 3. Créer un blob par image
     tree_items = []
     for img_path in image_paths:
         with open(img_path, "rb") as f:
@@ -337,7 +334,6 @@ def upload_images_github(image_paths):
         })
         print(f"  📦 Blob créé : {filename}")
 
-    # 4. Nouveau tree
     resp = requests.post(
         f"{api}/git/trees",
         headers=headers,
@@ -346,7 +342,6 @@ def upload_images_github(image_paths):
     resp.raise_for_status()
     new_tree_sha = resp.json()["sha"]
 
-    # 5. Commit
     resp = requests.post(
         f"{api}/git/commits",
         headers=headers,
@@ -359,7 +354,6 @@ def upload_images_github(image_paths):
     resp.raise_for_status()
     new_commit_sha = resp.json()["sha"]
 
-    # 6. Mettre à jour main
     resp = requests.patch(
         f"{api}/git/refs/heads/{GITHUB_BRANCH}",
         headers=headers,
@@ -368,7 +362,6 @@ def upload_images_github(image_paths):
     resp.raise_for_status()
     print(f"  ✅ Commit créé avec {len(image_paths)} images")
 
-    # 7. URLs raw
     urls = []
     for img_path in image_paths:
         filename = os.path.basename(img_path)
@@ -386,13 +379,16 @@ def upload_images_github(image_paths):
 # ---------------------------------------------
 
 def publier_instagram(post, images):
-    base_url = "https://graph.facebook.com/v19.0"
+    base_url = "https://graph.facebook.com/v25.0"
+
+    # Debug : vérifier les variables
+    print(f"  🔍 DEBUG INSTAGRAM_ACCOUNT_ID = [{INSTAGRAM_ACCOUNT_ID}]")
+    print(f"  🔍 DEBUG TOKEN length = {len(INSTAGRAM_ACCESS_TOKEN) if INSTAGRAM_ACCESS_TOKEN else 0}")
 
     # Upload toutes les images en un seul commit
     print("  📤 Upload des images sur GitHub...")
     image_urls = upload_images_github(images)
 
-    # Attendre que GitHub serve les fichiers
     print("  ⏳ Attente propagation GitHub (15s)...")
     time.sleep(15)
 
@@ -401,8 +397,12 @@ def publier_instagram(post, images):
     container_ids = []
 
     for image_url in image_urls:
+        url = f"{base_url}/{INSTAGRAM_ACCOUNT_ID}/media"
+        print(f"  🔍 POST → {url}")
+        print(f"  🔍 image_url → {image_url}")
+
         resp = requests.post(
-            f"{base_url}/{INSTAGRAM_ACCOUNT_ID}/media",
+            url,
             data={
                 "image_url": image_url,
                 "is_carousel_item": "true",
