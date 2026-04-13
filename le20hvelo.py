@@ -257,8 +257,8 @@ def generer_images(post):
     images = []
 
     try:
-        font_titre = ImageFont.truetype("fonts/Inter-Bold.ttf", 64)
-        font_txt   = ImageFont.truetype("fonts/Inter-Regular.ttf", 40)
+        font_titre = ImageFont.truetype("fonts/Inter-Bold.ttf", 48)
+        font_txt   = ImageFont.truetype("fonts/Inter-Regular.ttf", 36)
     except IOError:
         print("⚠️  Polices Inter non trouvées, utilisation de la police par défaut")
         font_titre = font_txt = ImageFont.load_default()
@@ -267,18 +267,21 @@ def generer_images(post):
         img = Image.new("RGB", (1080, 1080), (15, 15, 20))
         draw = ImageDraw.Draw(img)
 
-        draw.text(
-            (40, 120),
-            slide["titre"].upper(),
-            fill=(255, 200, 0),
-            font=font_titre,
-        )
+        # Titre en jaune — avec retour à la ligne
+        y = 100
+        titre_lines = textwrap.wrap(slide["titre"].upper(), 28)
+        for line in titre_lines:
+            draw.text((60, y), line, fill=(255, 200, 0), font=font_titre)
+            y += 60
 
-        y = 240
+        # Espacement entre titre et contenu
+        y += 40
+
+        # Contenu en blanc
         for ligne in slide["contenu"].split("\n"):
-            for chunk in textwrap.wrap(ligne, 40):
-                draw.text((40, y), chunk, fill=(240, 240, 240), font=font_txt)
-                y += 52
+            for chunk in textwrap.wrap(ligne, 38):
+                draw.text((60, y), chunk, fill=(240, 240, 240), font=font_txt)
+                y += 48
 
         path = f"slides/slide_{i + 1}.jpg"
         img.save(path, "JPEG", quality=95)
