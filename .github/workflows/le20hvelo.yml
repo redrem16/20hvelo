@@ -26,4 +26,6 @@ jobs:
           INSTAGRAM_ACCOUNT_ID:   ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
           GH_TOKEN:               ${{ secrets.GITHUB_TOKEN }}
         run: |
+          echo "IG ID length: ${#INSTAGRAM_ACCOUNT_ID}"
+          echo "IG TOKEN length: ${#INSTAGRAM_ACCESS_TOKEN}"
           python le20hvelo.py
