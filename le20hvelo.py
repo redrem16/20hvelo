@@ -1,7 +1,16 @@
 """
-LE 20H VELO — Script principal v5.0
+LE 20H VELO — Script principal v6.0
 Collecte l'actu cyclisme WorldTour, génère un post Instagram
 via Gemini et publie automatiquement via Meta Graph API.
+
+Fonctionnalités :
+- Collecte RSS (médias + équipes WorldTour)
+- Scraping classements UCI (ProCyclingStats) le lundi
+- Scraping calendrier courses à venir le dimanche
+- Slides "pépite" (infos de niche)
+- Avant-course (présentation J-1/J-2)
+- Design avec logo, barres couleur, numérotation
+- Publication carrousel Instagram via Meta Graph API
 """
 
 import os
@@ -36,38 +45,36 @@ BLEU_ACCENT  = (58, 107, 159)
 BLANC_TEXTE  = (240, 240, 240)
 GRIS_SUBTLE  = (138, 138, 149)
 
+
 # ---------------------------------------------
 # SOURCES RSS
 # ---------------------------------------------
 
 RSS_SOURCES = [
     # --- Médias cyclisme ---
-    {"nom": "Cyclingnews",  "url": "https://www.cyclingnews.com/rss.xml"},
-    {"nom": "Cyclism'Actu", "url": "https://www.cyclismactu.net/feed"},
-    {"nom": "VeloNews",     "url": "https://www.velonews.com/feed"},
-    {"nom": "Sporza",       "url": "https://sporza.be/nl/categorie/wielrennen.rss.xml"},
-    {
-        "nom": "RTBF Sport",
-        "url": "https://www.rtbf.be/api/dyn?action=get_article_list&cat=sp_cyclisme&output=rss",
-    },
-    {"nom": "DirectVelo",   "url": "https://www.directvelo.com/rss"},
-    {"nom": "Wielerflits",  "url": "https://www.wielerflits.nl/feed/"},
+    {"nom": "Cyclingnews",     "url": "https://www.cyclingnews.com/rss.xml"},
+    {"nom": "Cyclism'Actu",    "url": "https://www.cyclismactu.net/feed"},
+    {"nom": "VeloNews",        "url": "https://www.velonews.com/feed"},
+    {"nom": "Sporza",          "url": "https://sporza.be/nl/categorie/wielrennen.rss.xml"},
+    {"nom": "RTBF Sport",      "url": "https://www.rtbf.be/api/dyn?action=get_article_list&cat=sp_cyclisme&output=rss"},
+    {"nom": "DirectVelo",      "url": "https://www.directvelo.com/rss"},
+    {"nom": "Wielerflits",     "url": "https://www.wielerflits.nl/feed/"},
     {"nom": "ProCyclingStats", "url": "https://www.procyclingstats.com/rss.php"},
-    {"nom": "FirstCycling",  "url": "https://firstcycling.com/rss.php"},
+    {"nom": "FirstCycling",    "url": "https://firstcycling.com/rss.php"},
     # --- Equipes WorldTour ---
-    {"nom": "Visma-LAB",      "url": "https://www.teamvisma-leaseabike.com/feed"},
-    {"nom": "UAE Team Emirates", "url": "https://www.uaeteamemirates.com/feed/"},
-    {"nom": "Soudal Quick-Step", "url": "https://www.soudal-quickstepteam.com/feed"},
-    {"nom": "INEOS Grenadiers",  "url": "https://www.ineosgrenadiers.com/feed"},
-    {"nom": "Lidl-Trek",        "url": "https://www.lidl-trek.com/feed"},
+    {"nom": "Visma-LAB",          "url": "https://www.teamvisma-leaseabike.com/feed"},
+    {"nom": "UAE Team Emirates",  "url": "https://www.uaeteamemirates.com/feed/"},
+    {"nom": "Soudal Quick-Step",  "url": "https://www.soudal-quickstepteam.com/feed"},
+    {"nom": "INEOS Grenadiers",   "url": "https://www.ineosgrenadiers.com/feed"},
+    {"nom": "Lidl-Trek",          "url": "https://www.lidl-trek.com/feed"},
     {"nom": "Alpecin-Deceuninck", "url": "https://www.alpecin-deceuninck.com/en/feed"},
-    {"nom": "Intermarché-Wanty", "url": "https://www.intermarche-wanty.com/feed"},
-    {"nom": "Lotto-Dstny",      "url": "https://www.lfrvcycling.com/feed"},
+    {"nom": "Intermarché-Wanty",  "url": "https://www.intermarche-wanty.com/feed"},
+    {"nom": "Lotto-Dstny",        "url": "https://www.lfrvcycling.com/feed"},
     {"nom": "Bahrain Victorious", "url": "https://www.teambahrainvictorious.com/feed"},
-    {"nom": "Movistar Team",    "url": "https://www.movistarteam.com/feed"},
-    {"nom": "EF Education",     "url": "https://www.efprocycling.com/feed"},
-    {"nom": "Jayco-AlUla",      "url": "https://www.greenedge.bike/feed"},
-    {"nom": "Bora-Hansgrohe",   "url": "https://www.bfrvcycling.com/feed"},
+    {"nom": "Movistar Team",      "url": "https://www.movistarteam.com/feed"},
+    {"nom": "EF Education",       "url": "https://www.efprocycling.com/feed"},
+    {"nom": "Jayco-AlUla",        "url": "https://www.greenedge.bike/feed"},
+    {"nom": "Bora-Hansgrohe",     "url": "https://www.bfrvcycling.com/feed"},
 ]
 
 KEYWORDS_WORLDTOUR = [
@@ -79,8 +86,13 @@ KEYWORDS_WORLDTOUR = [
     "victoire", "winner", "sprint", "breakaway",
     "gc", "general classification", "maillot jaune",
     "maillot rose", "maglia rosa", "leader",
-    "transfer", "transfert", "signe", "contract",
+    "transfer", "transfert", "signe", "contrat",
     "injured", "bless", "abandon", "chute", "crash",
+    "sponsor", "partenaire", "coach", "entraineur",
+    "directeur sportif", "neo-pro", "stagiaire",
+    "materiel", "velo", "cadre", "prolongation",
+    "rejoint", "quitte", "startlist", "depart",
+    "reconnaissance", "presentation", "equipe",
 ]
 
 KEYWORDS_BELGES = [
@@ -100,27 +112,27 @@ Tu es le rédacteur de "LE 20H VELO", compte Instagram francophone
 de revue de presse quotidienne sur le cyclisme WorldTour.
 
 ═══ RÈGLE ABSOLUE — INTERDICTION D'INVENTER ═══
-- Tu ne peux utiliser QUE les informations contenues dans les articles fournis
+- Tu ne peux utiliser QUE les informations contenues dans les articles
+  et données fournis (articles RSS, classements UCI, calendrier)
 - AUCUN fait, résultat, classement, citation, statistique ou temps ne peut
   être inventé, déduit, extrapolé ou complété de mémoire
 - Si un article dit "Evenepoel a gagné", tu peux écrire qu'il a gagné.
   Si l'article ne mentionne pas le temps, tu ne donnes PAS de temps.
 - Si une info est présentée comme rumeur dans la source, utilise
   le conditionnel ("pourrait", "serait", "selon X")
-- Chaque fait doit être traçable à un article fourni
-- Si tu n'as pas assez d'articles, fais MOINS de slides.
+- Chaque fait doit être traçable aux données fournies
+- Si tu n'as pas assez de contenu, fais MOINS de slides.
   3 slides fiables valent mieux que 6 slides avec du remplissage inventé.
 - En cas de doute sur une info : ne pas l'inclure
 
 QUAND CITER LA SOURCE DANS LE TEXTE :
 - Ne PAS citer la source systématiquement sur chaque slide
-- Citer la source UNIQUEMENT quand c'est journalistiquement nécessaire :
+- Citer UNIQUEMENT quand c'est journalistiquement nécessaire :
   • Une exclu ou un scoop : "Selon la RTBF, Evenepoel pourrait…"
-  • Une rumeur ou info non confirmée : "D'après Cyclingnews, un transfert…"
-  • Des infos contradictoires : "Sporza annonce X, alors que VeloNews parle de Y"
+  • Une rumeur non confirmée : "D'après Cyclingnews, un transfert…"
+  • Des infos contradictoires entre sources
   • Une citation directe d'un coureur ou directeur sportif
-- Pour les résultats de course, faits établis et infos factuelles évidentes :
-  pas besoin de citer la source dans le texte
+- Résultats et faits établis : pas besoin de citer la source
 
 TON ET STYLE :
 - Décontracté, naturel, entre passionnés de cyclisme
@@ -131,17 +143,40 @@ TON ET STYLE :
 
 STRUCTURE DU CARROUSEL :
 - Slide 1 = TOUJOURS une couverture : titre "LE 20H VELO" + date du jour
-  (contenu : une phrase d'accroche résumant l'actu du jour)
-- Slides suivantes = revue de presse, 1 slide = 1 article différent
+  (contenu : une phrase d'accroche résumant le post du jour)
+- Slides suivantes = contenu selon le type de post
 - Nombre total de slides (couverture incluse) : 3 minimum, 6 maximum
-- Adapter le nombre aux articles disponibles
 
-THÈMES COUVERTS (par priorité) :
-- Résultats de courses
-- Transferts et rumeurs (toujours au conditionnel si non confirmé)
-- Blessures et abandons
-- Classements UCI (uniquement si type = "classements")
-- Coulisses et insolite
+SLIDES "PÉPITE" — INFOS DE NICHE :
+- Inclure 1 à 2 slides d'infos moins grand public si disponibles
+- Types : néo-pro qui signe, changement d'entraîneur ou de directeur
+  sportif, nouveau sponsor, changement de matériel, retour discret
+  de blessure, résultat en course secondaire, prolongation de contrat
+  inattendue, départ d'un staff, arrivée d'un partenaire technique
+- Préfixer le titre avec "PÉPITE |" (ex: "PÉPITE | Nouveau coach Visma")
+- Si aucune info niche dans les articles, ne pas en inventer
+- Les pépites s'ajoutent aux infos principales
+
+AVANT-COURSE (J-1 ou J-2 d'une grande course) :
+- Si les articles mentionnent une course à venir dans les 1-2 jours,
+  consacrer 1-2 slides à la présentation de cette course
+- Contenu : équipes favorites, coureurs à suivre, absents notables,
+  surprises potentielles — UNIQUEMENT basé sur les articles fournis
+- Maximum 2 courses traitées par post (les 2 plus importantes)
+
+TYPE "classements" (lundi) :
+- Une slide dédiée aux classements UCI fournis dans les données
+- Top 10 individuel + Top 5 équipes sur la même slide
+- Mentionner les mouvements importants (entrées/sorties du top 20,
+  progressions notables, équipes en difficulté)
+- Rester STRICTEMENT factuel : utiliser les données classement fournies
+- Le reste des slides = actu normale du jour
+
+TYPE "calendrier" (dimanche) :
+- La dernière slide = programme des courses de la semaine à venir
+- Utiliser les données calendrier fournies
+- Mentionner les courses les plus importantes de la semaine
+- Le reste des slides = actu normale du jour
 
 ANGLE BELGE :
 - Mentionner coureurs/équipes belges quand l'actu s'y prête
@@ -149,13 +184,14 @@ ANGLE BELGE :
 
 CONTENU PAR SLIDE :
 - Titre : max 6 mots, percutant
-- Contenu : le fait clé + pourquoi c'est important (max 250 caractères)
+- Contenu : le fait clé + pourquoi c'est important (max 280 caractères)
 
 JSON UNIQUEMENT — format strict :
-{"type":"<general|decouverte|classements>","legende":"<1-2 phrases>","slides":[{"numero":1,"titre":"<max 6 mots>","contenu":"<max 250 car>","source":"<nom>","lien":"<url>"}],"hashtags":["#tag"]}
+{"type":"<general|classements|calendrier>","legende":"<1-2 phrases>","slides":[{"numero":1,"titre":"<max 6 mots>","contenu":"<max 280 car>","source":"<nom>","lien":"<url>"}],"hashtags":["#tag"]}
 
-Les champs "source" et "lien" dans le JSON servent à la traçabilité interne,
-ils ne sont PAS affichés sur la slide. Seul le "contenu" apparaît visuellement.
+Les champs "source" et "lien" servent à la traçabilité interne.
+Pour la slide couverture, source = "20H VELO" et lien = "".
+Pour les slides classement/calendrier, source = "ProCyclingStats" et lien = "".
 
 Aucun texte hors du JSON. Pas de markdown. Parsable directement.
 """)
@@ -224,37 +260,151 @@ def collecter_rss():
 
 
 # ---------------------------------------------
-# 3. TYPE DE POST
+# 3. SCRAPING CLASSEMENTS UCI (lundi)
+# ---------------------------------------------
+
+def scraper_classements_uci():
+    """Scrape les classements UCI individuels et par équipes sur PCS."""
+    resultats = {"individuel": [], "equipes": []}
+
+    # Classement individuel
+    try:
+        url = "https://www.procyclingstats.com/rankings.php"
+        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        soup = BeautifulSoup(resp.text, "html.parser")
+        table = soup.find("table", class_="basic")
+        if table:
+            rows = table.find_all("tr")[1:21]  # Top 20
+            for row in rows:
+                cols = row.find_all("td")
+                if len(cols) >= 4:
+                    rang = cols[0].get_text(strip=True)
+                    nom = cols[2].get_text(strip=True)
+                    equipe = cols[3].get_text(strip=True) if len(cols) > 3 else ""
+                    points = cols[-1].get_text(strip=True)
+                    resultats["individuel"].append({
+                        "rang": rang, "nom": nom,
+                        "equipe": equipe, "points": points,
+                    })
+        print(f"  📊 Classement individuel : {len(resultats['individuel'])} coureurs")
+    except Exception as e:
+        print(f"  ⚠️  Erreur scraping classement individuel : {e}")
+
+    # Classement par équipes
+    try:
+        url = "https://www.procyclingstats.com/rankings/me/teams"
+        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        soup = BeautifulSoup(resp.text, "html.parser")
+        table = soup.find("table", class_="basic")
+        if table:
+            rows = table.find_all("tr")[1:11]  # Top 10
+            for row in rows:
+                cols = row.find_all("td")
+                if len(cols) >= 3:
+                    rang = cols[0].get_text(strip=True)
+                    equipe = cols[1].get_text(strip=True)
+                    points = cols[-1].get_text(strip=True)
+                    resultats["equipes"].append({
+                        "rang": rang, "equipe": equipe, "points": points,
+                    })
+        print(f"  📊 Classement équipes : {len(resultats['equipes'])} équipes")
+    except Exception as e:
+        print(f"  ⚠️  Erreur scraping classement équipes : {e}")
+
+    return resultats
+
+
+# ---------------------------------------------
+# 4. SCRAPING CALENDRIER (dimanche)
+# ---------------------------------------------
+
+def scraper_calendrier_semaine():
+    """Scrape les courses de la semaine à venir sur PCS."""
+    courses = []
+    try:
+        aujourd_hui = datetime.date.today()
+        # Chercher les courses des 7 prochains jours
+        url = f"https://www.procyclingstats.com/races.php?year={aujourd_hui.year}&circuit=1&class=&filter=Filter"
+        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        soup = BeautifulSoup(resp.text, "html.parser")
+        table = soup.find("table", class_="basic")
+        if table:
+            rows = table.find_all("tr")[1:]
+            for row in rows:
+                cols = row.find_all("td")
+                if len(cols) >= 3:
+                    dates = cols[0].get_text(strip=True)
+                    nom = cols[1].get_text(strip=True)
+                    categorie = cols[2].get_text(strip=True) if len(cols) > 2 else ""
+                    courses.append({
+                        "dates": dates, "nom": nom, "categorie": categorie,
+                    })
+        # Filtrer les courses dans les 7 prochains jours
+        # (garder les 10 premières comme approximation)
+        courses = courses[:10]
+        print(f"  📅 Calendrier : {len(courses)} courses trouvées")
+    except Exception as e:
+        print(f"  ⚠️  Erreur scraping calendrier : {e}")
+
+    return courses
+
+
+# ---------------------------------------------
+# 5. TYPE DE POST
 # ---------------------------------------------
 
 def determiner_type_post():
     jour = datetime.date.today().weekday()
     mois = datetime.date.today().month
-    if jour == 6 and 1 <= mois <= 10:
+
+    if jour == 0:  # Lundi
         return "classements"
+    if jour == 6:  # Dimanche
+        return "calendrier"
     return "general"
 
 
 # ---------------------------------------------
-# 4. GENERATION VIA GEMINI
+# 6. GENERATION VIA GEMINI
 # ---------------------------------------------
 
-def generer_post(articles, type_post):
+def generer_post(articles, type_post, classements=None, calendrier=None):
     genai.configure(api_key=GEMINI_API_KEY)
     model = genai.GenerativeModel(
         "gemini-3-flash-preview",
         system_instruction=SYSTEM_PROMPT,
     )
 
+    # Articles (max 8 pour le free tier)
     articles_txt = "\n".join([
         f"- [{a['source']}] {a['titre']} | {a['lien']}"
         f"{' (BELGE)' if a['est_belge'] else ''}"
         for a in articles[:8]
     ])
 
+    # Données supplémentaires selon le type
+    extra_data = ""
+
+    if type_post == "classements" and classements:
+        extra_data += "\n\n═══ CLASSEMENTS UCI (données exactes) ═══\n"
+        extra_data += "TOP 10 INDIVIDUEL :\n"
+        for c in classements["individuel"][:10]:
+            extra_data += f"  {c['rang']}. {c['nom']} ({c['equipe']}) — {c['points']} pts\n"
+        extra_data += "\nTOP 5 EQUIPES :\n"
+        for c in classements["equipes"][:5]:
+            extra_data += f"  {c['rang']}. {c['equipe']} — {c['points']} pts\n"
+
+    if type_post == "calendrier" and calendrier:
+        extra_data += "\n\n═══ CALENDRIER SEMAINE À VENIR ═══\n"
+        for c in calendrier:
+            extra_data += f"  {c['dates']} — {c['nom']} ({c['categorie']})\n"
+
     prompt = (
         f"Type: {type_post} | Date: {datetime.date.today().strftime('%d %B %Y')}\n"
-        f"Slides: 3-6\n\n{articles_txt}\n\nJSON:"
+        f"Slides: 3-6\n\n"
+        f"Articles:\n{articles_txt}"
+        f"{extra_data}\n\n"
+        f"JSON:"
     )
 
     response = None
@@ -293,11 +443,10 @@ def generer_post(articles, type_post):
 
 
 # ---------------------------------------------
-# 5. GENERATION DES IMAGES
+# 7. GENERATION DES IMAGES
 # ---------------------------------------------
 
 def charger_logo():
-    """Charge le logo depuis assets/logo.png, redimensionné."""
     try:
         logo = Image.open("assets/logo.png").convert("RGBA")
         logo = logo.resize((120, 120), Image.LANCZOS)
@@ -308,30 +457,25 @@ def charger_logo():
 
 
 def dessiner_barre_haut(draw):
-    """Barre jaune en haut de chaque slide."""
     draw.rectangle([(0, 0), (1080, 6)], fill=JAUNE_ACCENT)
 
 
 def dessiner_barre_bas(draw):
-    """Barre bleue en bas de chaque slide."""
     draw.rectangle([(0, 1074), (1080, 1080)], fill=BLEU_ACCENT)
 
 
 def generer_slide_couverture(post, logo, font_titre, font_txt, font_small):
-    """Génère la slide de couverture."""
     img = Image.new("RGB", (1080, 1080), NOIR_FOND)
     draw = ImageDraw.Draw(img)
 
     dessiner_barre_haut(draw)
     dessiner_barre_bas(draw)
 
-    # Logo centré
     if logo:
         x_logo = (1080 - logo.width) // 2
         img.paste(logo, (x_logo, 80), logo)
         y_start = 220
     else:
-        # Texte stylisé si pas de logo
         draw.text((390, 80), "LE", fill=JAUNE_ACCENT, font=font_small)
         draw.text((370, 110), "20H", fill=BLANC_TEXTE, font=font_titre)
         draw.text((340, 190), "VÉLO", fill=JAUNE_ACCENT, font=font_titre)
@@ -347,9 +491,23 @@ def generer_slide_couverture(post, logo, font_titre, font_txt, font_small):
     draw.text(((1080 - date_w) // 2, y_start + 20), date_txt,
               fill=GRIS_SUBTLE, font=font_small)
 
+    # Type badge
+    type_post = post.get("type", "general")
+    badge_txt = ""
+    if type_post == "classements":
+        badge_txt = "CLASSEMENTS UCI"
+    elif type_post == "calendrier":
+        badge_txt = "PROGRAMME DE LA SEMAINE"
+
+    if badge_txt:
+        bbox = draw.textbbox((0, 0), badge_txt, font=font_small)
+        badge_w = bbox[2] - bbox[0]
+        draw.text(((1080 - badge_w) // 2, y_start + 55), badge_txt,
+                  fill=BLEU_ACCENT, font=font_small)
+
     # Accroche
     slide_couverture = post["slides"][0]
-    y = y_start + 80
+    y = y_start + 100
     for chunk in textwrap.wrap(slide_couverture["contenu"], 35):
         bbox = draw.textbbox((0, 0), chunk, font=font_txt)
         chunk_w = bbox[2] - bbox[0]
@@ -361,7 +519,6 @@ def generer_slide_couverture(post, logo, font_titre, font_txt, font_small):
 
 
 def generer_slide_contenu(slide, num, total, logo, font_titre, font_txt, font_small):
-    """Génère une slide de contenu."""
     img = Image.new("RGB", (1080, 1080), NOIR_FOND)
     draw = ImageDraw.Draw(img)
 
@@ -380,16 +537,21 @@ def generer_slide_contenu(slide, num, total, logo, font_titre, font_txt, font_sm
     num_w = bbox[2] - bbox[0]
     draw.text((1080 - 40 - num_w, 42), num_txt, fill=GRIS_SUBTLE, font=font_small)
 
-    # Titre en jaune
+    # Détection pépite
+    is_pepite = slide["titre"].upper().startswith("PÉPITE")
+    titre_color = BLEU_ACCENT if is_pepite else JAUNE_ACCENT
+
+    # Titre
     y = 110
     titre_lines = textwrap.wrap(slide["titre"].upper(), 26)
     for line in titre_lines:
-        draw.text((60, y), line, fill=JAUNE_ACCENT, font=font_titre)
+        draw.text((60, y), line, fill=titre_color, font=font_titre)
         y += 58
 
-    # Trait bleu de séparation
+    # Trait de séparation
     y += 15
-    draw.line([(60, y), (160, y)], fill=BLEU_ACCENT, width=3)
+    sep_color = JAUNE_ACCENT if is_pepite else BLEU_ACCENT
+    draw.line([(60, y), (160, y)], fill=sep_color, width=3)
     y += 30
 
     # Contenu en blanc
@@ -402,7 +564,6 @@ def generer_slide_contenu(slide, num, total, logo, font_titre, font_txt, font_sm
 
 
 def generer_images(post):
-    """Génère toutes les images du carrousel."""
     os.makedirs("slides", exist_ok=True)
     images = []
 
@@ -419,12 +580,10 @@ def generer_images(post):
 
     for i, slide in enumerate(post["slides"]):
         if i == 0:
-            # Slide de couverture
             img = generer_slide_couverture(
                 post, logo, font_titre, font_txt, font_small
             )
         else:
-            # Slides de contenu
             img = generer_slide_contenu(
                 slide, i + 1, total, logo, font_titre, font_txt, font_small
             )
@@ -437,7 +596,7 @@ def generer_images(post):
 
 
 # ---------------------------------------------
-# 6. UPLOAD DES IMAGES SUR GITHUB (un seul commit)
+# 8. UPLOAD DES IMAGES SUR GITHUB (un seul commit)
 # ---------------------------------------------
 
 def upload_images_github(image_paths):
@@ -524,20 +683,18 @@ def upload_images_github(image_paths):
 
 
 # ---------------------------------------------
-# 7. PUBLICATION INSTAGRAM (carrousel)
+# 9. PUBLICATION INSTAGRAM (carrousel)
 # ---------------------------------------------
 
 def publier_instagram(post, images):
     base_url = "https://graph.facebook.com/v25.0"
 
-    # Upload toutes les images en un seul commit
     print("  📤 Upload des images sur GitHub...")
     image_urls = upload_images_github(images)
 
     print("  ⏳ Attente propagation GitHub (15s)...")
     time.sleep(15)
 
-    # Créer les containers Instagram
     print("  📦 Création des containers Instagram...")
     container_ids = []
 
@@ -557,9 +714,12 @@ def publier_instagram(post, images):
 
     # Construire la légende avec les liens
     legende = post["legende"] + "\n\n"
-    legende += "📰 Sources :\n"
+    liens_trouves = False
     for slide in post["slides"]:
-        if slide.get("lien") and slide["numero"] > 1:
+        if slide.get("lien") and slide["lien"] and slide["numero"] > 1:
+            if not liens_trouves:
+                legende += "📰 Sources :\n"
+                liens_trouves = True
             legende += f"➤ {slide['titre']} : {slide['lien']}\n"
     legende += "\n" + " ".join(post["hashtags"])
 
@@ -578,7 +738,6 @@ def publier_instagram(post, images):
     resp.raise_for_status()
     carousel_id = resp.json()["id"]
 
-    # Publier
     print("  ⏳ Attente traitement Meta (30s)...")
     time.sleep(30)
 
@@ -598,12 +757,12 @@ def publier_instagram(post, images):
 
 
 # ---------------------------------------------
-# 8. MAIN
+# 10. MAIN
 # ---------------------------------------------
 
 def main():
     print("=" * 50)
-    print("LE 20H VELO — Publication automatique v5.0")
+    print("LE 20H VELO — Publication automatique v6.0")
     print("=" * 50)
 
     date_str = datetime.date.today().isoformat()
@@ -612,6 +771,7 @@ def main():
         print(f"⏭️  Post déjà généré pour {date_str}, on skip.")
         return
 
+    # Collecte RSS
     print("\n📡 Collecte des articles RSS...")
     articles = collecter_rss()
 
@@ -624,20 +784,37 @@ def main():
     if belges:
         print(f"   dont {belges} article(s) belge(s)")
 
+    # Type de post
     type_post = determiner_type_post()
     print(f"\n📝 Type de post du jour : {type_post}")
 
+    # Données supplémentaires selon le jour
+    classements = None
+    calendrier = None
+
+    if type_post == "classements":
+        print("\n📊 Scraping des classements UCI...")
+        classements = scraper_classements_uci()
+
+    if type_post == "calendrier":
+        print("\n📅 Scraping du calendrier de la semaine...")
+        calendrier = scraper_calendrier_semaine()
+
+    # Génération du contenu via Gemini
     print("\n🤖 Génération du contenu via Gemini...")
-    post = generer_post(articles, type_post)
+    post = generer_post(articles, type_post, classements, calendrier)
     print(f"   {len(post['slides'])} slides générées")
 
+    # Génération des images
     print("\n🎨 Génération des images...")
     images = generer_images(post)
     print(f"   {len(images)} images créées")
 
+    # Publication Instagram
     print("\n📤 Publication sur Instagram...")
     publier_instagram(post, images)
 
+    # Sauvegarder le cache
     sauvegarder_cache(date_str, post)
 
     print("\n" + "=" * 50)
